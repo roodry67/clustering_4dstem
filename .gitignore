@@ -1,0 +1,5 @@
+RESULTS/*
+4DSTEM/*
+*.png
+__pycache__/
+*.pyc
