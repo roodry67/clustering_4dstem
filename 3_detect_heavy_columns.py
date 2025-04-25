@@ -1,14 +1,16 @@
-# clustering_exploration.py
+# ==== Hiperparámetros ====
+MAT="MoS2"
+MAT="SrTiO3"
+MAT="GaN"
 
-# ==== Configuración ====
-MAT = "MoS2"
-FOLDER_PATH = "RESULTS/" + MAT + "/2_DATA_pca/"
-n_components_umap = 3
-n_clusters = 6  # puedes cambiar este valor libremente
+folder_path = "RESULTS/"+MAT+"/2_DATA_pca/"
+folder_path = "RESULTS/"+MAT+"/1_DATA/"
+n_components = 3
+n_clusters = 2
 n_bins_radial_profile = 185
 cut_radial_profile_at = 170
 
-# ==== Imports ====
+# ==== Carga de datos ====
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,8 +18,8 @@ from scipy.ndimage import center_of_mass
 from sklearn.cluster import AgglomerativeClustering, KMeans
 import umap
 from sklearn.preprocessing import RobustScaler
+from collections import Counter
 
-# ==== Funciones Auxiliares ====
 def load_diffraction_patterns(folder_path):
     patterns = []
     coordinates = []
@@ -27,10 +29,12 @@ def load_diffraction_patterns(folder_path):
             pattern = np.load(path)
             name = os.path.splitext(fname)[0]
             i, j = map(int, name.split('_'))
+
             patterns.append(pattern)
             coordinates.append((i, j))
     return patterns, np.array(coordinates)
 
+# ==== Cálculo de descriptores ====
 def radial_profile(image, center=None, n_bins=n_bins_radial_profile):
     y, x = np.indices(image.shape)
     if center is None:
@@ -40,7 +44,7 @@ def radial_profile(image, center=None, n_bins=n_bins_radial_profile):
     tbin = np.bincount(r.ravel(), image.ravel(), minlength=n_bins)
     nr = np.bincount(r.ravel(), minlength=n_bins)
     radial_prof = tbin / np.maximum(nr, 1)
-    return radial_prof[:cut_radial_profile_at]
+    return radial_prof[:cut_radial_profile_at]  # recortar perfil
 
 def compute_descriptors(patterns):
     descriptors = []
@@ -49,60 +53,64 @@ def compute_descriptors(patterns):
         descriptors.append(profile)
     return np.stack(descriptors)
 
+# ==== Selección y concatenación de descriptores ====
 def prepare_embedding(descriptors):
     scaler = RobustScaler()
     descriptors_scaled = scaler.fit_transform(descriptors)
-    reducer = umap.UMAP(n_components=n_components_umap)
+    reducer = umap.UMAP(n_components=n_components)
     embeddings = reducer.fit_transform(descriptors_scaled)
     return embeddings
 
-def perform_clustering(embeddings, n_clusters):
+# ==== Clustering ====
+def perform_clustering(embeddings):
     clustering_model = AgglomerativeClustering(n_clusters=n_clusters, linkage='complete')
+    #clustering_model = KMeans(n_clusters=n_clusters, random_state=42)
     labels = clustering_model.fit_predict(embeddings)
     return labels
 
-# ==== Pipeline Principal ====
-print("📥 Cargando patrones de difracción...")
-patterns, coordinates = load_diffraction_patterns(FOLDER_PATH)
+def create_cluster_map(labels, coordinates):
+    i_vals = coordinates[:, 0]
+    j_vals = coordinates[:, 1]
+    map_shape = (i_vals.max() + 1, j_vals.max() + 1)
+    cluster_map = np.full(map_shape, -1, dtype=int)
+    for (i, j), label in zip(coordinates, labels):
+        cluster_map[i, j] = label
+    return cluster_map
 
-print("📈 Calculando descriptores y generando embedding...")
+# ==== Pipeline Principal ====
+patterns, coordinates = load_diffraction_patterns(folder_path)
 descriptors = compute_descriptors(patterns)
 embeddings = prepare_embedding(descriptors)
-
-print("➕ Añadiendo intensidad integrada como descriptor adicional...")
-integrated_values = []
-for (i, j) in coordinates:
-    fname = f"{i}_{j}.npy"
-    path = os.path.join(FOLDER_PATH, fname)
-    data = np.load(path)
-    integrated = np.sum(data)
-    integrated_values.append(integrated)
-
-integrated_values = np.array(integrated_values).reshape(-1, 1)
-integrated_values = (integrated_values - integrated_values.mean()) / integrated_values.std()
-
-# Concatenar embeddings + intensidad integrada
-full_descriptors = np.hstack([embeddings, integrated_values])
-
-print("🔗 Realizando clustering...")
-labels = perform_clustering(full_descriptors, n_clusters)
+labels = perform_clustering(embeddings)
+cluster_map = create_cluster_map(labels, coordinates)
 
 # ==== Visualización ====
-i_vals = coordinates[:, 0]
-j_vals = coordinates[:, 1]
-map_shape = (i_vals.max() + 1, j_vals.max() + 1)
-cluster_map = np.full(map_shape, -1, dtype=int)
-
-for (i, j), label in zip(coordinates, labels):
-    cluster_map[i, j] = label
-
 plt.figure(figsize=(6, 5))
 plt.imshow(cluster_map, cmap="tab10")
-plt.title(f"Clustering exploratorio (n_clusters={n_clusters})")
+plt.title("Mapa de Clusters de Difractogramas")
 plt.xlabel("j")
 plt.ylabel("i")
 plt.colorbar(label="Cluster")
 plt.tight_layout()
 plt.show()
+# ----------------------------
+# 5. Detectar cluster de columnas (ignorando -1)
+# ----------------------------
+flattened = cluster_map.flatten()
+valid_labels = flattened[flattened != -1]
+counts = Counter(valid_labels)
 
-print("✅ Clustering exploratorio completado.")
+print("Conteo de etiquetas (sin -1):", counts)
+
+column_cluster = min(counts, key=counts.get)
+print(f"🧱 Asignando cluster '{column_cluster}' como columnas pesadas (valor 1 en la máscara)")
+
+# ----------------------------
+# 6. Generar máscara binaria
+# ----------------------------
+column_mask = np.zeros_like(cluster_map, dtype=np.uint8)
+column_mask[cluster_map == column_cluster] = 1
+
+# Guardar máscara antes de limpiar
+plt.imsave("RESULTS/"+MAT+"/heavy_cols_mask.png", column_mask, cmap="gray")
+print(f"🖼️ Imagen sin limpiar guardada como 'heavy_cols_mask.png'")

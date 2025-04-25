@@ -6,15 +6,15 @@ import dask
 
 # ⚙️ Configuración
 file_path = "./4DSTEM/GaN/Experimental/SI data (11)8C 5cm CL1-4 018A/Diffraction SI.dm4"
-file_path = "./4DSTEM/SrTiO3/Experiment/Diffraction SI.dm4"
 file_path = "/home/javier/workspace/clustering/4DSTEM/OLD/SI data (10)/Diffraction SI.dm4"
 file_path = "./4DSTEM/MoS2/Atomico/Experimental/SI data (24)/Diffraction SI.dm4"
-file_path = "./4DSTEM/MoS2/Monocapa-Bicapa/SI data (35)_lowMag_LowSampling/Diffraction SI.dm4"
+file_path = "./4DSTEM/SrTiO3/Experiment/Diffraction SI.dm4"
 
-output_folder = "RESULTS/MoS2_MB/1_DATA/"
-BLOCK_SIZE = 10  # tamaño del bloque (en navegación)
-MAX_WORKERS = 4   # ajusta según tu CPU
-N=150
+file_path='./4DSTEM/GaN/Experimental/SI data (11)8C 5cm CL1-4 018A/Diffraction SI.dm4'
+output_folder = "RESULTS/GaN/1_DATA/"
+BLOCK_SIZE = 80  # tamaño del bloque (en navegación)
+MAX_WORKERS = 12   # ajusta según tu CPU
+N=80
 # Limita los hilos de Dask para evitar saturar la RAM
 dask.config.set(scheduler='threads', num_workers=MAX_WORKERS)
 
@@ -24,7 +24,7 @@ data = hs.load(file_path, lazy=True)
 #print full size of data sample
 print(f" Tamaño de la muestra: {data.data.shape}")
 # Recorte (ajusta según tus necesidades)
-data_cropped = data.inav[1:N,1:N]
+data_cropped = data.inav[60:120,60:120]
 nav_shape = data_cropped.axes_manager.navigation_shape
 print(f" Tamaño recorte: {nav_shape}")
 
